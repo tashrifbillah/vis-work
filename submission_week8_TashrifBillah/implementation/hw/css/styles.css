@@ -1,0 +1,28 @@
+.tooltip {
+    position: absolute;
+    text-align: left;
+    width: auto;
+    height: auto;
+    padding: 2px;
+    font: 12px sans-serif;
+    background: lightsteelblue;
+    border-radius: 8px;
+}
+
+.table {
+    font-size: 0.7em;
+}
+
+h5 {
+    text-align: center;
+}
+
+.title {
+    font-weight: bold;
+}
+
+.axis {
+    font-size: 12px;
+    font-weight: bold;
+}
+
