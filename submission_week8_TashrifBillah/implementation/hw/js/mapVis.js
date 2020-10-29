@@ -101,7 +101,12 @@ class MapVis {
         vis.legend.append("g")
             .attr("class", "x-axis axis")
 
+        vis.circlegend= vis.svg.append("g")
+            .attr('transform', `translate(${4 * vis.width / 5}, ${vis.margin.top})`)
 
+        // symbols
+        vis.circle = d3.scaleLinear()
+            .range([0,50])
 
          vis.wrangleData()
 
@@ -130,8 +135,7 @@ class MapVis {
         // prepare covid data by grouping all rows by state
         let covidDataByState = Array.from(d3.group(filteredData, d =>d.state), ([key, value]) => ({key, value}))
 
-        // have a look
-        // console.log(covidDataByState)
+
 
         // init final data structure in which both data sets will be merged into
         vis.stateInfo = {}
@@ -177,6 +181,7 @@ class MapVis {
         let temp= d3.max(Object.values(vis.stateInfo).map(d => d[selectedCategory]))
         colors.domain([0, temp])
         vis.x.domain([0, temp])
+        vis.circle.domain([0, temp])
 
         vis.xAxis
             .tickFormat(selectedCategory.search("rel")>=0?d3.format('.2%'):d3.format(','))
@@ -184,6 +189,33 @@ class MapVis {
 
         vis.svg.select(".x-axis")
             .call(vis.xAxis);
+
+
+        // concentric circle legends
+        // there are always four circles with same radius, so no update/exit is necessary
+        // minimum values should be 1, 4, 7, and 10
+        // the above minimums should prevent negative temp
+        if (temp > 10) {
+            vis.circlegend.selectAll(".circle-legend")
+                .data([0.1 * temp, 0.4 * temp, 0.7 * temp, temp])
+                .enter()
+                .append("circle")
+                .attr("r", d => vis.circle(d))
+                .attr("cy", d => vis.circle(d))
+                .attr("class", "circle-legend")
+
+
+            // however, texts corresponding to the four circles need to be reset
+            vis.circlegend.selectAll(".circle-legend-text").remove()
+            vis.circlegend.selectAll(".circle-legend-text")
+                .data([0.1 * temp, 0.4 * temp, 0.7 * temp, temp])
+                .enter()
+                .append("text")
+                .attr("y", d => 2 * vis.circle(d) + 15)
+                .attr("x", -19)
+                .attr("class", "circle-legend-text")
+                .text(d => d3.format(",")(d3.format('.0f')(d)))
+        }
 
         vis.updateVis()
 
@@ -205,25 +237,79 @@ class MapVis {
         vis.states
             .transition()
             .duration(trans_time)
-            .attr("fill", d => vis.stateInfo[d.properties.name]?
-                colors(vis.stateInfo[d.properties.name][selectedCategory]):"black")
+            .attr("fill", d => selectedCategory.search("rel")>=0?
+                vis.stateInfo[d.properties.name]?
+                colors(vis.stateInfo[d.properties.name][selectedCategory]):"black":"white")
             .attr("stroke", 'darkblue')
 
-        vis.states
-            .on('mouseover', function(event, d){
-                console.log(d)
+
+
+        // for absolute values -- symbols
+        if (selectedCategory.search("rel")<0) {
+
+            // remove map hover effects
+            vis.states.on("mouseover", function (event, d) {
                 d3.select(this)
-                    .attr('fill', 'red')
+                    .attr('fill', 'white')
+            })
+            vis.states.on("mouseout", function (event, d) {
+                d3.select(this)
+                    .attr('fill', 'white')
+            })
 
-                // highlight the corresponding bar
-                d3.selectAll('.bar')
-                     .attr('fill', b=> b.state==d.properties.name?"red":colors(vis.stateInfo[b.state][selectedCategory]))
 
-                vis.tooltip
-                    .style("opacity", 1)
-                    .style("left", event.pageX + 20 + "px")
-                    .style("top", event.pageY + "px")
-                    .html(`
+            // circles
+            // the breakdown between tmp and circle is necessary, otherwise .on() won't work
+            let tmp = vis.svg.selectAll(".circle")
+                .data(vis.usa, d => d.properties.name)
+
+            let circle = tmp.enter()
+                .append("circle")
+                .merge(tmp)
+
+            circle
+                .transition()
+                .duration(trans_time)
+                .attr("class", "circle")
+                .attr("cx", d => {
+                    let tmp = d && vis.path.centroid(d)
+
+                    if (tmp[0]) {
+                        return tmp[0]
+                    }
+                })
+                .attr("cy", d => {
+                    let temp = d && vis.path.centroid(d)
+                    if (temp[1]) {
+                        return temp[1]
+                    }
+                })
+                .attr("r", d => {
+                    if (vis.stateInfo[d.properties.name]) {
+                        let r= vis.stateInfo[d.properties.name][selectedCategory]
+                        return r>0?vis.circle(r):0
+                    }})
+                .attr("fill", "blue")
+
+
+            // activate circle hover effects
+            circle
+                .on('mouseover', function (event, d) {
+
+                    d3.select(this)
+                        .attr('fill', 'red')
+                        .attr('stroke-width', '2px')
+                        .attr('stroke', 'black')
+
+                    // highlight the corresponding bar
+                    d3.selectAll('.bar')
+                        .attr('fill', b => b.state == d.properties.name ? "red" : colors(vis.stateInfo[b.state][selectedCategory]))
+
+                    vis.tooltip
+                        .style("opacity", 1)
+                        .style("left", event.pageX + 20 + "px")
+                        .style("top", event.pageY + "px")
+                        .html(`
                      <div style="border: thin solid grey; border-radius: 5px; background: lightgrey; padding: 20px">
                          <h4>${d.properties.name}</h4>                
                          <h6>Population: ${d3.format(',')(vis.stateInfo[d.properties.name].population)}</h6>
@@ -233,22 +319,81 @@ class MapVis {
                          <h6>Deaths (relative): ${d3.format('.3%')(vis.stateInfo[d.properties.name].relDeaths)}</h6>
                      </div>`);
 
-            })
-            .on('mouseout', function(event, d){
-                d3.select(this)
-                    .attr("fill", d => vis.stateInfo[d.properties.name]?
-                        colors(vis.stateInfo[d.properties.name][selectedCategory]):"black")
+                })
+                .on('mouseout', function (event, d) {
+                    d3.select(this)
+                        .attr('stroke-width', '0px')
+                        .attr("fill", "blue")
 
-                // reset the corresponding bar
-                d3.selectAll('.bar')
-                    .attr('fill', b=> colors(vis.stateInfo[b.state][selectedCategory]))
+                    // reset the corresponding bar
+                    d3.selectAll('.bar')
+                        .attr('fill', b => colors(vis.stateInfo[b.state][selectedCategory]))
 
-                vis.tooltip
-                    .style("opacity", 0)
-                    .style("left", 0)
-                    .style("top", 0)
-                    .html(``);
-            })
+                    vis.tooltip
+                        .style("opacity", 0)
+                        .style("left", 0)
+                        .style("top", 0)
+                        .html(``);
+                })
+
+            tmp.exit().remove()
+
+        }
+
+        // for relative values -- map
+        else
+        {
+            // remove circles
+            vis.svg.selectAll(".circle").remove()
+            vis.circlegend.selectAll(".circle-legend").remove()
+            vis.circlegend.selectAll(".circle-legend-text").remove()
+
+
+
+            vis.states
+                .on('mouseover', function (event, d) {
+
+                    d3.select(this)
+                        .attr('fill', 'red')
+
+                    // highlight the corresponding bar
+                    d3.selectAll('.bar')
+                        .attr('fill', b => b.state == d.properties.name ? "red" : colors(vis.stateInfo[b.state][selectedCategory]))
+
+                    vis.tooltip
+                        .style("opacity", 1)
+                        .style("left", event.pageX + 20 + "px")
+                        .style("top", event.pageY + "px")
+                        .html(`
+                     <div style="border: thin solid grey; border-radius: 5px; background: lightgrey; padding: 20px">
+                         <h4>${d.properties.name}</h4>                
+                         <h6>Population: ${d3.format(',')(vis.stateInfo[d.properties.name].population)}</h6>
+                         <h6>Cases (absolute): ${d3.format(',')(vis.stateInfo[d.properties.name].absCases)}</h6>
+                         <h6>Deaths (absolute): ${d3.format(',')(vis.stateInfo[d.properties.name].absDeaths)}</h6>
+                         <h6>Cases (relative): ${d3.format('.2%')(vis.stateInfo[d.properties.name].relCases)}</h6>
+                         <h6>Deaths (relative): ${d3.format('.3%')(vis.stateInfo[d.properties.name].relDeaths)}</h6>
+                     </div>`);
+
+                })
+                .on('mouseout', function (event, d) {
+                    d3.select(this)
+                        .attr("fill", d => vis.stateInfo[d.properties.name] ?
+                            colors(vis.stateInfo[d.properties.name][selectedCategory]) : "black")
+
+                    // reset the corresponding bar
+                    d3.selectAll('.bar')
+                        .attr('fill', b => colors(vis.stateInfo[b.state][selectedCategory]))
+
+                    vis.tooltip
+                        .style("opacity", 0)
+                        .style("left", 0)
+                        .style("top", 0)
+                        .html(``);
+                })
+
+        }
+
+
 
 
 

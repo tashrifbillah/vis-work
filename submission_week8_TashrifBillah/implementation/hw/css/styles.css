@@ -26,3 +26,19 @@ h5 {
     font-weight: bold;
 }
 
+
+.circle {
+    opacity: 0.7;
+}
+
+.circle-legend {
+    fill: none;
+    stroke: black;
+    stroke-width: 2px;
+}
+
+.circle-legend-text {
+    font-size: 12px;
+    font-weight: bold;
+    fill: blue;
+}
